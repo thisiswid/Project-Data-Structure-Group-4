@@ -6,42 +6,49 @@
 // 4. HASRIN CITRA UTAMI - NIM 2902816645
 // 5. WIDIYA PRAMESTIKA - NIM 2902816304
 
-import graph.Graph;
-import hash.HashTable;
+import model.Mahasiswa;
+import service.MahasiswaService;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Scanner;
+import java.util.Set;
 
 /**
- * Main adalah titik masuk (entry point) aplikasi Manajemen Data Mahasiswa.
+ * Main: titik masuk aplikasi Manajemen Data Mahasiswa.
  *
- * CATATAN STATUS: Secara formal, penyusunan menu aplikasi dan penggabungan
- * seluruh package adalah tanggung jawab Anggota 1 (Ketua dan Integrator).
- * Package model dan service masih berupa placeholder dan belum
- * diimplementasikan oleh anggota yang bertanggung jawab, sehingga belum
- * bisa diintegrasikan ke sini.
- *
- * Supaya proyek tetap punya aplikasi yang bisa benar-benar dijalankan dan
- * diuji sejauh progres saat ini, Main.java ini dibuat sebagai menu konsol
- * sederhana yang mendemonstrasikan dua struktur yang sudah selesai dan
- * fungsional: HashTable<K, V> (package hash, berbasis java.util.HashMap)
- * dan Graph<V> (package graph, adjacency list berbasis java.util.HashMap
- * dan java.util.ArrayList). Begitu Mahasiswa dan MahasiswaService selesai
- * diimplementasikan oleh anggota yang bertanggung jawab, menu ini dapat
- * diperluas atau digantikan oleh Anggota 1 untuk mengelola data Mahasiswa
- * yang sesungguhnya (NIM sebagai key, objek Mahasiswa sebagai value).
+ * Menu konsol untuk operasi CRUD, tampilan terurut, sinkronisasi CSV, dan
+ * pembangkit data dummy. Seluruh logika data ada di MahasiswaService, yang
+ * memakai Hash Table (pencarian NIM) dan BST (daftar terurut).
  */
 public class Main {
 
-    private static final HashTable<String, String> dataTable = new HashTable<>();
-    private static final Graph<String> dataGraph = new Graph<>();
+    private static final String FILE_CSV = "resources/data/mahasiswa.csv";
+    private static final String[] JURUSAN = {
+            "Computer Science", "Information Systems", "Cyber Security",
+            "Mobile Application and Technology", "Game Application and Technology"
+    };
+
+    private static final MahasiswaService service = new MahasiswaService();
     private static final Scanner scanner = new Scanner(System.in);
 
     public static void main(String[] args) {
+        // Jalankan di thread dengan stack besar: BST bersifat rekursif sehingga
+        // pada data yang sangat banyak kedalaman rekursinya bisa besar.
+        Thread t = new Thread(null, Main::jalankan, "main-app", 64L * 1024 * 1024);
+        t.start();
+        try {
+            t.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void jalankan() {
         System.out.println("=====================================================");
-        System.out.println(" DEMO HASH TABLE & GRAPH - Manajemen Data Mahasiswa");
-        System.out.println(" (Menu Mahasiswa/Service menunggu implementasi");
-        System.out.println("  Anggota 1 dan 4)");
+        System.out.println("   MANAJEMEN DATA MAHASISWA (Hash Table + BST)");
         System.out.println("=====================================================");
 
         boolean running = true;
@@ -50,30 +57,15 @@ public class Main {
             String pilihan = scanner.nextLine().trim();
 
             switch (pilihan) {
-                case "1":
-                    tambahData();
-                    break;
-                case "2":
-                    cariData();
-                    break;
-                case "3":
-                    hapusData();
-                    break;
-                case "4":
-                    tampilkanStatistikHashTable();
-                    break;
-                case "5":
-                    tambahEdgeGraph();
-                    break;
-                case "6":
-                    tampilkanTetanggaGraph();
-                    break;
-                case "7":
-                    jalankanBfs();
-                    break;
-                case "8":
-                    jalankanDfs();
-                    break;
+                case "1": tambah(); break;
+                case "2": cari(); break;
+                case "3": tampilkanTerurut(); break;
+                case "4": ubah(); break;
+                case "5": hapus(); break;
+                case "6": service.muatDariCSV(FILE_CSV); System.out.println(); break;
+                case "7": service.simpanKeCSV(FILE_CSV); System.out.println(); break;
+                case "8": buatDummy(); break;
+                case "9": statistik(); break;
                 case "0":
                     running = false;
                     System.out.println("Keluar dari aplikasi. Sampai jumpa!");
@@ -88,127 +80,108 @@ public class Main {
 
     /** Menampilkan daftar menu yang tersedia kepada pengguna. */
     private static void tampilkanMenu() {
-        System.out.println("=== Menu Hash Table ===");
-        System.out.println("1. Tambah data (key = NIM, value = nama)");
-        System.out.println("2. Cari data berdasarkan key");
-        System.out.println("3. Hapus data berdasarkan key");
-        System.out.println("4. Tampilkan statistik Hash Table");
-        System.out.println("=== Menu Graph ===");
-        System.out.println("5. Tambah edge (relasi antar dua NIM/nama)");
-        System.out.println("6. Tampilkan tetangga suatu vertex");
-        System.out.println("7. Jalankan BFS dari suatu vertex");
-        System.out.println("8. Jalankan DFS dari suatu vertex");
+        System.out.println("--------------- MENU ---------------");
+        System.out.println("1. Tambah mahasiswa");
+        System.out.println("2. Cari mahasiswa berdasarkan NIM (Hash Table)");
+        System.out.println("3. Tampilkan semua mahasiswa terurut NIM (BST inorder)");
+        System.out.println("4. Ubah data mahasiswa");
+        System.out.println("5. Hapus mahasiswa");
+        System.out.println("6. Muat data dari CSV (" + FILE_CSV + ")");
+        System.out.println("7. Simpan data ke CSV (" + FILE_CSV + ")");
+        System.out.println("8. Buat data dummy");
+        System.out.println("9. Statistik data");
         System.out.println("0. Keluar");
         System.out.print("> ");
     }
 
-    // ================= Menu Hash Table =================
+    private static String baca(String label) {
+        System.out.print(label);
+        return scanner.nextLine().trim();
+    }
 
-    /** Menambahkan pasangan key-value baru ke dalam HashTable. */
-    private static void tambahData() {
-        System.out.print("Masukkan key (contoh: NIM): ");
-        String key = scanner.nextLine().trim();
-        System.out.print("Masukkan value (contoh: nama): ");
-        String value = scanner.nextLine().trim();
+    private static void tambah() {
+        String nim = baca("NIM     : ");
+        String nama = baca("Nama    : ");
+        String jurusan = baca("Jurusan : ");
+        service.tambahMahasiswa(nim, nama, jurusan);
+        System.out.println();
+    }
 
-        if (key.isEmpty() || value.isEmpty()) {
-            System.out.println("Key dan value tidak boleh kosong.\n");
+    private static void cari() {
+        String nim = baca("NIM yang dicari: ");
+        Mahasiswa m = service.cariBerdasarkanNim(nim);
+        System.out.println(m == null ? "NIM " + nim + " tidak ditemukan." : "Ditemukan: " + m);
+        System.out.println();
+    }
+
+    private static void tampilkanTerurut() {
+        List<Mahasiswa> daftar = service.dapatkanSemuaTerurut();
+        if (daftar.isEmpty()) {
+            System.out.println("(belum ada data)\n");
+            return;
+        }
+        int batas = 50;
+        for (int i = 0; i < daftar.size() && i < batas; i++) {
+            System.out.println((i + 1) + ". " + daftar.get(i));
+        }
+        if (daftar.size() > batas) {
+            System.out.println("... dan " + (daftar.size() - batas)
+                    + " data lainnya (total " + daftar.size() + ").");
+        }
+        System.out.println();
+    }
+
+    private static void ubah() {
+        String nim = baca("NIM yang diubah: ");
+        if (service.cariBerdasarkanNim(nim) == null) {
+            System.out.println("NIM " + nim + " tidak ditemukan.\n");
+            return;
+        }
+        String nama = baca("Nama baru    : ");
+        String jurusan = baca("Jurusan baru : ");
+        service.updateMahasiswa(nim, nama, jurusan);
+        System.out.println();
+    }
+
+    private static void hapus() {
+        String nim = baca("NIM yang dihapus: ");
+        service.hapusMahasiswa(nim);
+        System.out.println();
+    }
+
+    /** Membangkitkan n mahasiswa dummy dengan NIM 10 digit unik (awalan "29"). */
+    private static void buatDummy() {
+        String input = baca("Jumlah data dummy (1 - 100000): ");
+        int n;
+        try {
+            n = Integer.parseInt(input);
+        } catch (NumberFormatException e) {
+            System.out.println("Masukkan angka yang valid.\n");
+            return;
+        }
+        if (n < 1 || n > 100_000) {
+            System.out.println("Jumlah harus antara 1 dan 100000.\n");
             return;
         }
 
-        dataTable.put(key, value);
-        System.out.println("Data berhasil disimpan: " + key + " -> " + value + "\n");
-    }
-
-    /** Mencari dan menampilkan value berdasarkan key yang dimasukkan pengguna. */
-    private static void cariData() {
-        System.out.print("Masukkan key yang dicari: ");
-        String key = scanner.nextLine().trim();
-
-        String value = dataTable.get(key);
-        if (value == null) {
-            System.out.println("Key \"" + key + "\" tidak ditemukan.\n");
-        } else {
-            System.out.println("Ditemukan: " + key + " -> " + value + "\n");
+        Random rnd = new Random();
+        Set<String> nimUnik = new HashSet<>();
+        List<Mahasiswa> daftar = new ArrayList<>(n);
+        while (daftar.size() < n) {
+            String nim = String.format("29%08d", rnd.nextInt(100_000_000));
+            if (nimUnik.add(nim)) {
+                daftar.add(new Mahasiswa(nim, "Mahasiswa " + (daftar.size() + 1),
+                        JURUSAN[rnd.nextInt(JURUSAN.length)]));
+            }
         }
+        int ditambah = service.tambahBanyak(daftar);
+        System.out.println(ditambah + " data dummy berhasil ditambahkan.\n");
     }
 
-    /** Menghapus data berdasarkan key yang dimasukkan pengguna. */
-    private static void hapusData() {
-        System.out.print("Masukkan key yang akan dihapus: ");
-        String key = scanner.nextLine().trim();
-
-        String removed = dataTable.remove(key);
-        if (removed == null) {
-            System.out.println("Key \"" + key + "\" tidak ditemukan, tidak ada yang dihapus.\n");
-        } else {
-            System.out.println("Data \"" + key + "\" -> \"" + removed + "\" berhasil dihapus.\n");
-        }
-    }
-
-    /** Menampilkan statistik dasar HashTable: ukuran dan status kosong/tidak. */
-    private static void tampilkanStatistikHashTable() {
-        System.out.println("--- Statistik Hash Table ---");
-        System.out.println("Jumlah data (size) : " + dataTable.size());
-        System.out.println("Kosong?            : " + dataTable.isEmpty());
-        System.out.println("-----------------------------\n");
-    }
-
-    // ================= Menu Graph =================
-
-    /** Menambahkan edge (relasi) antara dua vertex pada Graph. */
-    private static void tambahEdgeGraph() {
-        System.out.print("Masukkan vertex pertama: ");
-        String vertexA = scanner.nextLine().trim();
-        System.out.print("Masukkan vertex kedua: ");
-        String vertexB = scanner.nextLine().trim();
-
-        if (vertexA.isEmpty() || vertexB.isEmpty()) {
-            System.out.println("Vertex tidak boleh kosong.\n");
-            return;
-        }
-
-        dataGraph.addEdge(vertexA, vertexB);
-        System.out.println("Edge berhasil ditambahkan: " + vertexA + " <-> " + vertexB + "\n");
-    }
-
-    /** Menampilkan daftar tetangga dari suatu vertex. */
-    private static void tampilkanTetanggaGraph() {
-        System.out.print("Masukkan vertex: ");
-        String vertex = scanner.nextLine().trim();
-
-        if (!dataGraph.containsVertex(vertex)) {
-            System.out.println("Vertex \"" + vertex + "\" tidak ditemukan.\n");
-            return;
-        }
-
-        List<String> neighbors = dataGraph.getNeighbors(vertex);
-        System.out.println("Tetangga dari \"" + vertex + "\": " + neighbors + "\n");
-    }
-
-    /** Menjalankan traversal BFS dari vertex awal yang dimasukkan pengguna. */
-    private static void jalankanBfs() {
-        System.out.print("Masukkan vertex awal: ");
-        String start = scanner.nextLine().trim();
-
-        List<String> hasil = dataGraph.bfs(start);
-        if (hasil.isEmpty()) {
-            System.out.println("Vertex \"" + start + "\" tidak ditemukan di graph.\n");
-        } else {
-            System.out.println("Urutan BFS: " + hasil + "\n");
-        }
-    }
-
-    /** Menjalankan traversal DFS dari vertex awal yang dimasukkan pengguna. */
-    private static void jalankanDfs() {
-        System.out.print("Masukkan vertex awal: ");
-        String start = scanner.nextLine().trim();
-
-        List<String> hasil = dataGraph.dfs(start);
-        if (hasil.isEmpty()) {
-            System.out.println("Vertex \"" + start + "\" tidak ditemukan di graph.\n");
-        } else {
-            System.out.println("Urutan DFS: " + hasil + "\n");
-        }
+    private static void statistik() {
+        System.out.println("--- Statistik ---");
+        System.out.println("Jumlah data  : " + service.jumlahData());
+        System.out.println("Tinggi BST   : " + service.tinggiBst());
+        System.out.println("-----------------\n");
     }
 }
