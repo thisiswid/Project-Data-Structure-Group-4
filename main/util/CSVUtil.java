@@ -10,14 +10,16 @@ import java.util.List;
  */
 public class CSVUtil {
 
+    /** Baris header file CSV; dilewati saat membaca. */
+    private static final String HEADER = "nim,nama,jurusan";
+
     /**
      * Menyimpan daftar mahasiswa ke dalam file CSV.
      */
     public static void simpanKeCSV(String filePath, List<Mahasiswa> daftarMahasiswa) {
         try (PrintWriter writer = new PrintWriter(new FileWriter(filePath))) {
-            // Tulis Header (opsional)
-            // writer.println("nim,nama,jurusan");
-            
+            writer.println(HEADER);
+
             for (Mahasiswa m : daftarMahasiswa) {
                 writer.println(m.toCSVString());
             }
@@ -33,7 +35,7 @@ public class CSVUtil {
     public static List<Mahasiswa> bacaDariCSV(String filePath) {
         List<Mahasiswa> daftar = new ArrayList<>();
         File file = new File(filePath);
-        
+
         if (!file.exists()) {
             return daftar;
         }
@@ -41,6 +43,9 @@ public class CSVUtil {
         try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                if (line.trim().isEmpty() || line.trim().equalsIgnoreCase(HEADER)) {
+                    continue; // lewati baris kosong dan header
+                }
                 Mahasiswa m = Mahasiswa.fromCSVString(line);
                 if (m != null) {
                     daftar.add(m);
